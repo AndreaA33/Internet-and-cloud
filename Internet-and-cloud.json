@@ -1,59 +1,77 @@
 {
-    "name": "distributed-database-app",
-    "description": "A distributed database application with a load balancer, virtual machine group, and replica database.",
-    "components": [
-      {
-        "type": "load_balancer",
-        "name": "lb",
-        "protocol": "tcp"
-      },
-      {
-        "type": "virtual_machine_group",
-        "name": "vm_group",
-        "nodes": [
-          {
-            "type": "node",
-            "name": "node1",
-            "role": "leader",
-            "consensus_protocol": "paxos",
-            "application": "app"
-          },
-          {
-            "type": "node",
-            "name": "node2",
-            "consensus_protocol": "paxos",
-            "application": "app"
-          },
-          {
-            "type": "node",
-            "name": "node3",
-            "consensus_protocol": "paxos",
-            "application": "app"
-          }
-        ],
-        "database": {
-          "type": "database",
-          "name": "db",
-          "acid": true,
-          "replica": {
-            "type": "database",
-            "name": "replica_db"
-          }
+  "name": "distributed-database-app",
+  "description": "A distributed database application with a load balancer, virtual machine group, public and private subnets, auto-scaling, and replica database.",
+  "components": [
+    {
+      "type": "load_balancer",
+      "name": "lb",
+      "protocol": "tcp",
+      "target_zones": ["us-east-1a", "us-east-1b"],
+      "subnet": "public_subnet"
+    },
+    {
+      "type": "virtual_machine_group",
+      "name": "vm_group",
+      "availability_zones": ["us-east-1a", "us-east-1b", "us-east-1c"],
+      "subnets": {
+        "public_subnet": {
+          "name": "public_subnet",
+          "availability_zone": "us-east-1a",
+          "cidr_block": "10.0.1.0/24",
+          "internet_gateway": true
+        },
+        "private_subnet": {
+          "name": "private_subnet",
+          "availability_zone": "us-east-1b",
+          "cidr_block": "10.0.2.0/24",
+          "nat_gateway": true
         }
-      }
-    ],
-    "connections": [
-      {
-        "from": "lb",
-        "to": "vm_group"
       },
-      {
-        "from": "vm_group",
-        "to": "db"
+      "auto_scaling": {
+        "enabled": true,
+        "min_nodes": 1,
+        "max_nodes": 4,
+        "scale_up_threshold": 75,
+        "scale_down_threshold": 25
       },
-      {
-        "from": "db",
-        "to": "replica_db"
+      "nodes": [
+        {
+          "type": "node",
+          "name": "node1",
+          "role": "leader",
+          "consensus_protocol": "paxos",
+          "application": "app",
+          "availability_zone": "us-east-1a",
+          "subnet": "public_subnet"
+        }
+      ],
+      "database": {
+        "type": "database",
+        "name": "db",
+        "acid": true,
+        "availability_zone": "us-east-1b",
+        "subnet": "private_subnet"
+      },
+      "replica": {
+        "type": "database",
+        "name": "replica_db",
+        "availability_zone": "us-east-1c",
+        "subnet": "private_subnet"
       }
-    ]
-  }
+    }
+  ],
+  "connections": [
+    {
+      "from": "lb",
+      "to": "vm_group"
+    },
+    {
+      "from": "vm_group",
+      "to": "vm_group.database"
+    },
+    {
+      "from": "vm_group.database",
+      "to": "vm_group.replica"
+    }
+  ]
+}
