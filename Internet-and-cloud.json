@@ -1,0 +1,59 @@
+{
+    "name": "distributed-database-app",
+    "description": "A distributed database application with a load balancer, virtual machine group, and replica database.",
+    "components": [
+      {
+        "type": "load_balancer",
+        "name": "lb",
+        "protocol": "tcp"
+      },
+      {
+        "type": "virtual_machine_group",
+        "name": "vm_group",
+        "nodes": [
+          {
+            "type": "node",
+            "name": "node1",
+            "role": "leader",
+            "consensus_protocol": "paxos",
+            "application": "app"
+          },
+          {
+            "type": "node",
+            "name": "node2",
+            "consensus_protocol": "paxos",
+            "application": "app"
+          },
+          {
+            "type": "node",
+            "name": "node3",
+            "consensus_protocol": "paxos",
+            "application": "app"
+          }
+        ],
+        "database": {
+          "type": "database",
+          "name": "db",
+          "acid": true,
+          "replica": {
+            "type": "database",
+            "name": "replica_db"
+          }
+        }
+      }
+    ],
+    "connections": [
+      {
+        "from": "lb",
+        "to": "vm_group"
+      },
+      {
+        "from": "vm_group",
+        "to": "db"
+      },
+      {
+        "from": "db",
+        "to": "replica_db"
+      }
+    ]
+  }
