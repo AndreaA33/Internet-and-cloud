@@ -1,6 +1,6 @@
 {
     "AWSTemplateFormatVersion": "2010-09-09",
-    "Description": "A distributed database application with a load balancer, virtual machine group, public and private subnets, auto-scaling, and replica database.",
+    "Description": "A distributed database application with consistency and partition tolerance (CP) in mind.",
     "Resources": {
       "PublicSubnet": {
         "Type": "AWS::EC2::Subnet",
@@ -36,28 +36,75 @@
           "GatewayId": { "Ref": "InternetGateway" }
         }
       },
-      "NatGateway": {
-        "Type": "AWS::EC2::NatGateway",
+      "Database": {
+        "Type": "AWS::RDS::DBInstance",
         "Properties": {
-          "SubnetId": { "Ref": "PublicSubnet" },
-          "AllocationId": { "Fn::GetAtt": ["ElasticIP", "AllocationId"] }
+          "DBInstanceClass": "db.t3.micro",
+          "Engine": "mysql",
+          "MasterUsername": "admin",
+          "MasterUserPassword": "password123",
+          "AllocatedStorage": "20",
+          "BackupRetentionPeriod": 7,
+          "StorageType": "gp2",
+          "PubliclyAccessible": false,
+          "MultiAZ": true, 
+          "DBSubnetGroupName": { "Ref": "DBSubnetGroup" }
         }
       },
-      "ElasticIP": {
-        "Type": "AWS::EC2::EIP"
-      },
-      "PrivateRouteTable": {
-        "Type": "AWS::EC2::RouteTable",
+      "ReplicaDatabase": {
+        "Type": "AWS::RDS::DBInstance",
         "Properties": {
-          "VpcId": "vpc-0a1b2c3d4e5f67890"
+          "SourceDBInstanceIdentifier": { "Ref": "Database" },
+          "DBInstanceClass": "db.t3.micro",
+          "Engine": "mysql",
+          "PubliclyAccessible": false,
+          "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+          "MultiAZ": true
         }
       },
-      "PrivateRoute": {
-        "Type": "AWS::EC2::Route",
+      "DBSubnetGroup": {
+        "Type": "AWS::RDS::DBSubnetGroup",
         "Properties": {
-          "RouteTableId": { "Ref": "PrivateRouteTable" },
-          "DestinationCidrBlock": "0.0.0.0/0",
-          "NatGatewayId": { "Ref": "NatGateway" }
+          "DBSubnetGroupDescription": "Database subnet group for consistent and partition-tolerant RDS setup",
+          "SubnetIds": [
+            { "Ref": "PublicSubnet" },
+            { "Ref": "PrivateSubnet" }
+          ]
+        }
+      },
+      "AutoScalingGroup": {
+        "Type": "AWS::AutoScaling::AutoScalingGroup",
+        "Properties": {
+          "LaunchConfigurationName": { "Ref": "LaunchConfiguration" },
+          "MinSize": "1",
+          "MaxSize": "4",
+          "VPCZoneIdentifier": [
+            { "Ref": "PublicSubnet" },
+            { "Ref": "PrivateSubnet" }
+          ]
+        }
+      },
+      "LaunchConfiguration": {
+        "Type": "AWS::AutoScaling::LaunchConfiguration",
+        "Properties": {
+          "ImageId": "ami-0c55b159cbfafe1f0",
+          "InstanceType": "t2.micro",
+          "SecurityGroups": [{ "Ref": "InstanceSecurityGroup" }]
+        }
+      },
+      "InstanceSecurityGroup": {
+        "Type": "AWS::EC2::SecurityGroup",
+        "Properties": {
+          "GroupDescription": "Enable access to instances",
+          "VpcId": "vpc-0a1b2c3d4e5f67890",
+          "SecurityGroupIngress": [
+            {
+              "IpProtocol": "tcp",
+              "FromPort": 3306,
+              "ToPort": 3306,
+              "CidrIp": "0.0.0.0/0"
+            }
+          ]
         }
       },
       "LoadBalancer": {
@@ -90,92 +137,6 @@
           "LoadBalancerArn": { "Ref": "LoadBalancer" },
           "Port": 80,
           "Protocol": "TCP"
-        }
-      },
-      "AutoScalingGroup": {
-        "Type": "AWS::AutoScaling::AutoScalingGroup",
-        "Properties": {
-          "LaunchConfigurationName": { "Ref": "LaunchConfiguration" },
-          "MinSize": "1",
-          "MaxSize": "4",
-          "VPCZoneIdentifier": [
-            { "Ref": "PublicSubnet" },
-            { "Ref": "PrivateSubnet" }
-          ],
-          "TargetGroupARNs": [{ "Ref": "TargetGroup" }]
-        }
-      },
-      "LaunchConfiguration": {
-        "Type": "AWS::AutoScaling::LaunchConfiguration",
-        "Properties": {
-          "ImageId": "ami-0c55b159cbfafe1f0", 
-          "InstanceType": "t2.micro",
-          "SecurityGroups": [{ "Ref": "InstanceSecurityGroup" }],
-          "UserData": {
-            "Fn::Base64": {
-              "Fn::Join": [
-                "",
-                [
-                  "#!/bin/bash\n",
-                  "sudo yum update -y\n",
-                  "sudo amazon-linux-extras install docker\n",
-                  "sudo service docker start\n",
-                  "sudo docker run -d myapp-image\n"
-                ]
-              ]
-            }
-          }
-        }
-      },
-      "InstanceSecurityGroup": {
-        "Type": "AWS::EC2::SecurityGroup",
-        "Properties": {
-          "GroupDescription": "Enable access to instances",
-          "VpcId": "vpc-0a1b2c3d4e5f67890",
-          "SecurityGroupIngress": [
-            {
-              "IpProtocol": "tcp",
-              "FromPort": 80,
-              "ToPort": 80,
-              "CidrIp": "0.0.0.0/0"
-            }
-          ]
-        }
-      },
-      "Database": {
-        "Type": "AWS::RDS::DBInstance",
-        "Properties": {
-          "DBInstanceClass": "db.t3.micro",
-          "Engine": "mysql",
-          "MasterUsername": "admin",
-          "MasterUserPassword": "password123",
-          "AllocatedStorage": "20",
-          "BackupRetentionPeriod": 7,
-          "StorageType": "gp2",
-          "PubliclyAccessible": false,
-          "MultiAZ": false,
-          "DBSubnetGroupName": { "Ref": "DBSubnetGroup" }
-        }
-      },
-      "ReplicaDatabase": {
-        "Type": "AWS::RDS::DBInstance",
-        "Properties": {
-          "SourceDBInstanceIdentifier": { "Ref": "Database" },
-          "DBInstanceClass": "db.t3.micro",
-          "Engine": "mysql",
-          "PubliclyAccessible": false,
-          "MultiAZ": false,
-          "DBSubnetGroupName": { "Ref": "DBSubnetGroup" }
-        }
-      },
-      "DBSubnetGroup": {
-        "Type": "AWS::RDS::DBSubnetGroup",
-        "Properties": {
-          "DBSubnetGroupDescription": "Database subnet group",
-          "SubnetIds": [
-            { "Ref": "PublicSubnet" },
-            { "Ref": "PrivateSubnet" }
-          ]
         }
       }
     },
