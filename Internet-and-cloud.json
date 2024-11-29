@@ -1,77 +1,124 @@
 {
-  "name": "distributed-database-app",
-  "description": "A distributed database application with a load balancer, virtual machine group, public and private subnets, auto-scaling, and replica database.",
-  "components": [
-    {
-      "type": "load_balancer",
-      "name": "lb",
-      "protocol": "tcp",
-      "target_zones": ["us-east-1a", "us-east-1b"],
-      "subnet": "public_subnet"
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "A distributed database application with a load balancer, virtual machine group, public and private subnets, auto-scaling, and replica database.",
+  "Resources": {
+    "mainVPC" : {
+      "Type" : "AWS::EC2::VPC",
+      "Properties" : {
+          "CidrBlock" : "172.31.0.0/16",
+          "EnableDnsSupport" : "true",
+          "EnableDnsHostnames" : "true",
+          "Tags" : [ 
+              {"Key" : "stack", "Value" : "production"} 
+          ]
+      }
     },
-    {
-      "type": "virtual_machine_group",
-      "name": "vm_group",
-      "availability_zones": ["us-east-1a", "us-east-1b", "us-east-1c"],
-      "subnets": {
-        "public_subnet": {
-          "name": "public_subnet",
-          "availability_zone": "us-east-1a",
-          "cidr_block": "10.0.1.0/24",
-          "internet_gateway": true
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "mainVPC" },
+        "CidrBlock": "10.0.1.0/24",
+        "AvailabilityZone": "eu-west-2a",
+        "Tags": [{"Key": "Name", "Value": "public_subnet"}]
+      }
+    },
+    "PrivateSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": { "Ref": "mainVPC" },
+        "CidrBlock": "10.0.2.0/24",
+        "AvailabilityZone": "eu-west-2b",
+        "Tags": [{"Key": "Name", "Value": "private_subnet"}]
+      }
+    },
+    "MainGateway" : {
+      "Type" : "AWS::EC2::InternetGateway",
+      "Properties" : {
+        "Tags" : [ {"Key" : "stack", "Value" : "production"}]
+      }
+   },
+    "AttachGateway": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId" : { "Ref" : "mainVPC" },
+        "InternetGatewayId" : { "Ref" : "MainGateway" }
+      }
+    },
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": { "Ref": "mainVPC" },
+        "Tags": [{"Key": "Name", "Value": "public_route_table"}]
+      }
+    },
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "Properties": {
+        "RouteTableId": { "Ref": "PublicRouteTable" },
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": { "Ref": "MainGateway" }
+      },
+      "DependsOn": "AttachGateway"
+    },
+    "PublicSubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": { "Ref": "PublicSubnet" },
+        "RouteTableId": { "Ref": "PublicRouteTable" }
+      }
+    },
+    "LoadBalancer": {
+      "Type": "AWS::ElasticLoadBalancingV2::LoadBalancer",
+      "Properties": {
+        "Name": "lb",
+        "Scheme": "internet-facing",
+        "Subnets": [{ "Ref": "PublicSubnet" }],
+        "Type": "application"
+      }
+    },
+    "AutoScalingGroup": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "VPCZoneIdentifier": [{ "Ref": "PublicSubnet" }, { "Ref": "PrivateSubnet" }],
+        "MinSize": "1",
+        "MaxSize": "4",
+        "LaunchTemplate": {
+          "LaunchTemplateName": "VMGroupTemplate",
+          "Version": "1"
         },
-        "private_subnet": {
-          "name": "private_subnet",
-          "availability_zone": "us-east-1b",
-          "cidr_block": "10.0.2.0/24",
-          "nat_gateway": true
-        }
-      },
-      "auto_scaling": {
-        "enabled": true,
-        "min_nodes": 1,
-        "max_nodes": 4,
-        "scale_up_threshold": 75,
-        "scale_down_threshold": 25
-      },
-      "nodes": [
-        {
-          "type": "node",
-          "name": "node1",
-          "role": "leader",
-          "consensus_protocol": "paxos",
-          "application": "app",
-          "availability_zone": "us-east-1a",
-          "subnet": "public_subnet"
-        }
-      ],
-      "database": {
-        "type": "database",
-        "name": "db",
-        "acid": true,
-        "availability_zone": "us-east-1b",
-        "subnet": "private_subnet"
-      },
-      "replica": {
-        "type": "database",
-        "name": "replica_db",
-        "availability_zone": "us-east-1c",
-        "subnet": "private_subnet"
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "vm_group",
+            "PropagateAtLaunch": true
+          }
+        ]
+      }
+    },
+    "DatabaseInstance": {
+      "Type": "AWS::RDS::DBInstance",
+      "Properties": {
+        "DBInstanceClass": "db.t3.micro",
+        "Engine": "postgres",
+        "DBInstanceIdentifier": "db",
+        "PubliclyAccessible": false,
+        "AvailabilityZone": "eu-west-2b",
+        "DBSubnetGroupName": { "Ref": "DBSubnetGroup" },
+        "MultiAZ": false
+      }
+    },
+    "DBSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupDescription": "DB subnet group",
+        "SubnetIds": [{ "Ref": "PublicSubnet" }, { "Ref": "PrivateSubnet" }]
       }
     }
-  ],
-  "connections": [
-    {
-      "from": "lb",
-      "to": "vm_group"
-    },
-    {
-      "from": "vm_group",
-      "to": "vm_group.database"
-    },
-    {
-      "from": "vm_group.database",
-      "to": "vm_group.replica"
+  },
+  "Outputs": {
+    "LoadBalancerDNS": {
+      "Description": "DNS of the Load Balancer",
+      "Value": { "Fn::GetAtt": ["LoadBalancer", "DNSName"] }
     }
-  ]
+  }
 }
