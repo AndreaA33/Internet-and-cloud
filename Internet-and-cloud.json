@@ -124,23 +124,7 @@
         "TargetType": "instance"
       }
     },
-    "MainGatewayTemp": {
-      "Type": "AWS::EC2::LaunchTemplate",
-      "Properties": {
-        "LaunchTemplateName": "DefaultLaunchTemplate",
-        "LaunchTemplateData": {
-          "InstanceType": "t2.micro",
-          "NetworkInterfaces": [
-            {
-              "DeviceIndex": 0,
-              "AssociatePublicIpAddress": false
-            }
-          ]
-        }
-      }
-    },
     "AutoScalingGroup": {
-      "DependsOn": ["MainGatewayTemp"],
       "Type": "AWS::AutoScaling::AutoScalingGroup",
       "Properties": {
         "VPCZoneIdentifier": [{ "Ref": "PrivateSubnet1" }, { "Ref": "PrivateSubnet2" }],
@@ -148,7 +132,7 @@
         "MaxSize": "4",
         "DesiredCapacity": "2",
         "LaunchTemplate": {
-          "LaunchTemplateName": { "Ref": "MainGatewayTemp" },
+          "LaunchTemplateId": "lt-008cb721f2243c239",
           "Version": "1"
         },
         "TargetGroupARNs": [{ "Ref": "TargetGroup" }],
