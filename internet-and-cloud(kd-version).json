@@ -164,8 +164,8 @@
         "MaxSize": "4",
         "DesiredCapacity": "2",
         "LaunchTemplate": {
-          "LaunchTemplateId": "lt-008cb721f2243c239",
-          "Version": "3"
+          "LaunchTemplateId": "lt-08601dc6af9e120b8",
+          "Version": "2"
         },
         "TargetGroupARNs": [
           {
